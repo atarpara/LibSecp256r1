@@ -18,7 +18,7 @@ TODO
  - [x] inverse modulo
  - [x] ec addition
  - [x] ec double
- - [ ] ec multiply
+ - [x] ec multiply
  - [ ] verify signature for EIP-7212
  - [ ] Fix bugs
  - [ ] Gas estimations
