@@ -1,0 +1,249 @@
+
+#define macro MAIN() = takes(0) returns(0) {
+    0x00 calldataload
+    // inv_mod()
+    0x00 mstore
+    0x20 0x00 return
+
+}
+
+#define macro inv_mod() = takes(1) returns (1) {
+    // takes [x]
+    0x00                                                                            // [t, x]
+    0x01                                                                            // [nT, t, x]
+    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff              // [r, nT, t, x]
+    loop:
+        dup4 iszero
+        break jumpi
+
+    dup4                                // [x, r, nT, t, x]
+    dup2                                 // [r, x, r, nT, t, x]
+    div                                  // [q = r/x, r, nT, t , x]
+    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff     // [P, q, r, nT, t, x]
+    dup1                                // [P, P, q, r, nT, t, x]
+    dup5                                // [nT, P, P, q, r, nT, t, x]
+    dup4                                // [q, nT, P, P, q, r, nT, t, x]
+    mulmod                              // [q*nT%P, P, q, r, nT, t, x]
+    dup2 sub                            // [P-q*nT%P, P, q, r, nT, t, x]
+    dup6                                // [t ,P-q*n%P, P, q, r, nT, t, x]
+    addmod                              // [nT, q, r, t, tmp, x]
+    swap3                               // [t, q, r, nT, tmp, x]
+    swap4                               // [tmp, q, r, nT, t, x]               
+    pop                                 
+    dup5                                // [x, q, r, nT, t, x]
+    mul                                 // [x*q, r, nT, t, x]
+    swap1                               // [r, x*q, nT, t, x]
+    sub                                 // [x=r-x*q, nT, t, r=x]
+    swap3                               // [r, nT, t, x]                        
+    loop jump
+
+    break:
+        pop pop swap1 pop
+
+}
+
+// point addition for elliptic curve in jacobian coordinates
+// formula from https://en.wikibooks.org/wiki/Cryptography/Prime_Curve/Jacobian_Coordinates
+#define macro jacobian_add() = takes(6) returns(3) {
+    // takes [Qz, Qy, Qx, Pz, Py, Px]
+    dup5 iszero 
+    break1 jumpi
+    dup2 iszero
+    break2 jumpi
+
+    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+    swap4   // [z1, z2, y2, x2, P, y1, x1]
+    dup5
+    dup1   
+    dup1    // [P,P,P,z1, z2, y2, x2, P, y1, x1]
+    dup4
+    dup5    // [z1, z1, P, P,P,z1, z2, y2, x2, P, y1, x1]
+    mulmod  // [z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    dup3
+    dup1
+    dup1    //[P,P,P,z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    dup8    
+    dup1    // [z2, z2,P,P,P,z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    mulmod  // [z2_sq,P,P,z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    dup2
+    dup1    // [P,P,z2_sq,P,P,z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    dup15   // [x1,P,P,z2_sq,P,P,z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    dup4    //[z2_sq,x1,P,P,z2_sq,P,P,z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    mulmod  //[U1,P,z2_sq,P,P,z1_sq, P,P,z1, z2, y2, x2, P, y1, x1]
+    swap11  // [x2,P,z2_sq,P,P,z1_sq, P,P,z1, z2, y2, U1, P, y1, x1]
+    dup6    // [z1_sq,x2,P,z2_sq,P,P,z1_sq, P,P,z1, z2, y2, U1, P, y1, x1]
+    mulmod  //[U2,z2_sq,P,P,z1_sq, P,P,z1, z2, y2, U1, P, y1, x1]
+    swap11
+    pop         // [z2_sq,P,P,z1_sq,P,P,z1, z2, y2, u1, u2, y1, x1] 
+    dup12       // [y1, z2_sq,P,P,z1_sq,P,P,z1, z2, y2, u1, u2, y1, x1]
+    mulmod       // [y1*z2_Sq%P,P,z1_sq,P,P,z1, z2, y2, u1, u2, y1, x1]
+    dup7         //[z2, y1*z2_Sq%P,P,z1_sq,P,P,z1, z2, y2, u1, u2, y1, x1]
+    mulmod      // [S1, z1_sq,P,P,z1, z2, y2, u1, u2, y1, x1]
+    swap6
+    mulmod
+    dup3
+    mulmod      //[S2,z1, z2, S1,u1, u2, y1, x1]
+
+    dup6 dup6   // [u1,u2,S2,z1, z2, S1,u1, u2, y1, x1]
+    eq break jumpi
+
+    // [S2, z1, z2, S1,u1, u2, y1, x1]
+    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff // [P,S2, z1, z2, S1,u1, u2, y1, x1]
+    swap1
+    dup2            // [P, S2, P, z1, z2, S1, u1, u2, y1, x1]
+    dup7                //[U1, P, S2, P,  z1, z2, S1,u1, u2, y1, x1]
+    dup2            // [P,U1, P, S2, P,  z1, z2, S1,u1, u2, y1, x1] 
+    sub
+    dup2
+    swap9           // [u2,P-U1, P, S2, P, z1, z2, S1,u1, P, y1, x1]
+    addmod          // [H,S2,P, z1, z2, S1,u1, P, y1, x1]
+    dup6
+    dup4
+    sub             // [P-S1, H,S2,P, z1, z2, S1,u1, P, y1, x1]
+    swap1
+    swap10
+    pop             //[P-S1,S2,P, z1, z2, S1,u1, P, y1, H]
+    addmod          // [R, z1, z2, S1, U1, P, y1, H]
+    dup6
+    dup9 dup1
+    mulmod      // [H2, R, z1, z2, S1, U1, P, y1, H]
+    dup7
+    dup10
+    mulmod      // [H3, H2, R, z1, z2, S1, U1, P, y1, H]
+    swap6
+    dup8
+    swap2
+    mulmod      // [U1H2,  R, z1, z2, S1, H3, P, y1, H]
+    dup7 dup1
+    dup1 dup1   // [P,P,P,P,P,U1H2,  R, z1, z2, S1, H3, P, y1, H]
+    dup1        // [P,P,P,P,P,P,U1H2,  R, z1, z2, S1, H3, P, y1, H]
+    dup6
+    0x02
+    mulmod
+    dup11
+    addmod
+    swap1
+    sub       // [P - H3 + 2*U1H2%P, P, P, U1H2,  R, z1, z2, S1, H3, P, y1, H]
+    dup2        
+    dup5 dup1
+    mulmod  //[R2, P - H3 + 2*U1H2%P, P, P, U1H2,  R, z1, z2, S1, H3, P, y1, H]
+    addmod   // [x3, P, U1H2,  R, z1, z2, S1, H3, P, y1, H]
+    swap9
+    pop      // [P, U1H2,  R, z1, z2, S1, H3, P, x3, H]
+    dup1
+    dup7 dup9   // [s1,h3, P, P, U1H2,  R, z1, z2, S1, H3, P, x3, H]
+    mulmod      
+    dup2 sub
+    swap3
+    dup2 dup1
+    swap4
+    dup12
+    dup3
+    sub
+    addmod
+    mulmod
+    dup3
+    addmod  // [y3, P-s1*h3%P, z1, z2, S1, H3, P, x3, H]
+    swap5
+    pop pop
+    dup4
+    swap2
+    mulmod
+    swap4
+    swap1
+    swap4
+    mulmod // [z3, x3, y3]
+    swap1
+    swap2 swap1  // [z3, y3, x3]
+
+    break:
+        // takes [S2, z1, z2, S1,u1, u2, y1, x1]
+        swap1   //[z1, S2, z2, S1,u1, u2, y1, x1] 
+        swap4
+        xor 
+        ret jumpi
+        pop swap2 pop  // [z1,y1,x1]
+        point_double()
+        close jump
+    ret:
+        // [z1, S2, z2, S1,u1, u2, y1, x1] 
+        pop pop pop pop
+        pop pop pop pop
+        0x00 0x00 0x01      // [1,0,0]
+
+    close:
+        
+}
+
+
+
+#define macro point_double() = takes(3) returns(3) {
+    // takes [z1,y1,x1]
+    dup2 iszero
+    break jumpi
+
+    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+
+    dup1       //[P P z1 y1 x1]
+    dup4 dup1    // [y1,y1,P,P,z1,y1,x1]
+    mulmod       // [y_sq,P,z1,y1,x1]
+    dup2
+    dup3 dup1
+    mulmod       // [z_sq y_sq P z1 y1 x1]
+    dup3 dup1 
+    dup8
+    dup5
+    mulmod
+    0x04
+    mulmod    // [S,z_sq,y_sq, P, z1,y1,x1]
+    dup4 dup1
+    dup1 dup1 //[P P P P S z_sq y_sq P z1 y1 x1]
+    swap5
+    dup1
+    mulmod // [z4 P P S P y_sq P z1 y1 x1]
+    0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc
+    mulmod // [A*z4%P P S P y_sq P P z1 y1 x1]
+    dup2 dup1
+    dup11 dup1 // [x1 x1 P P A*z4%P P S P y_sq P z1 y1 x1]
+    mulmod
+    0x03
+    mulmod
+    addmod  // [M S P y_sq P z1 y1 x1]
+    dup3 dup1 
+    dup4
+    0x2
+    mulmod
+    dup2 
+    sub
+    dup2
+    dup5 dup1 // [M M P, P - 2*S%P P M S P y_sq P z1 y1 x1]
+    mulmod
+    addmod  // [x3 M S P y_sq P z1 y1 x1]
+    swap8
+    pop    // [M S P y_sq P x3 z1 y1 x3]
+    swap3
+    dup3
+    dup1 dup1 // [P P P y_sq S P M P z1 y1 x3]
+    swap3
+    dup1
+    mulmod  // [y_sq*y_sq%P,P,S P M P P z1 y1 x3]
+    0x08
+    mulmod
+    dup2 sub
+    swap2
+    dup9
+    dup2 sub
+    addmod   // [S + (P-x3)%_P, P - 8 * ysq ** 2%P, P M P z1 y1 x3]
+    dup3
+    swap1
+    dup5
+    mulmod
+    addmod  // [y3, M, P, z1 y1, x3]
+    swap4   // [y1, M, P, z1 ,y3, x3]
+    swap1
+    pop     // [y1, P , z1, y3, x3]
+    dup2    // [P,Y1,P,z1,y3,x3]
+    mulmod
+    0x02
+    mulmod // [z3,y3,z3]
+}

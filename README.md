@@ -1,3 +1,11 @@
+## Secp256r1 curve operation
+
+ - [x] inverse modulo
+ - [x] ec addition
+ - [x] ec double
+ - [ ] ec multiply
+ - [ ] verify signature for EIP-7212
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
