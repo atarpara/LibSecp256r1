@@ -1,17 +1,28 @@
+/// @title LibSecp256r1
+/// @notice SPDX-License-Identifier: MIT
+/// @author atarpara <https://github.com/atarpara>
+/// @notice Library for secp256r1 elliptic curve computations and signature verifier in Huff
+
+#define constant A = 0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc
+#define constant B = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
+#define constant P = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+#define constant N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
+#define constant G_X = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296
+#define constant G_Y = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5
+#define constant ADDRESS_MASK = 0x000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+
 
 #define macro MAIN() = takes(0) returns(0) {
-    0x00 calldataload
-    // inv_mod()
-    0x00 mstore
-    0x20 0x00 return
-
+  0x00 calldataload // load first 32 bytes calldata
+  0xE0 shr // [selector]
+  
 }
 
 #define macro inv_mod() = takes(1) returns (1) {
     // takes [x]
     0x00                                                                            // [t, x]
     0x01                                                                            // [nT, t, x]
-    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff              // [r, nT, t, x]
+    [P]              // [r, nT, t, x]
     loop:
         dup4 iszero
         break jumpi
@@ -19,7 +30,7 @@
     dup4                                // [x, r, nT, t, x]
     dup2                                 // [r, x, r, nT, t, x]
     div                                  // [q = r/x, r, nT, t , x]
-    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff     // [P, q, r, nT, t, x]
+    [P]     // [P, q, r, nT, t, x]
     dup1                                // [P, P, q, r, nT, t, x]
     dup5                                // [nT, P, P, q, r, nT, t, x]
     dup4                                // [q, nT, P, P, q, r, nT, t, x]
@@ -51,7 +62,7 @@
     dup2 iszero
     break2 jumpi
 
-    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+    [P]
     swap4   // [z1, z2, y2, x2, P, y1, x1]
     dup5
     dup1   
@@ -88,7 +99,7 @@
     eq break jumpi
 
     // [S2, z1, z2, S1,u1, u2, y1, x1]
-    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff // [P,S2, z1, z2, S1,u1, u2, y1, x1]
+    [P] // [P,S2, z1, z2, S1,u1, u2, y1, x1]
     swap1
     dup2            // [P, S2, P, z1, z2, S1, u1, u2, y1, x1]
     dup7                //[U1, P, S2, P,  z1, z2, S1,u1, u2, y1, x1]
@@ -155,6 +166,7 @@
     mulmod // [z3, x3, y3]
     swap1
     swap2 swap1  // [z3, y3, x3]
+    close jump
 
     break:
         // takes [S2, z1, z2, S1,u1, u2, y1, x1]
@@ -163,7 +175,7 @@
         xor 
         ret jumpi
         pop swap2 pop  // [z1,y1,x1]
-        point_double()
+        jacobian_double()
         close jump
     ret:
         // [z1, S2, z2, S1,u1, u2, y1, x1] 
@@ -171,18 +183,17 @@
         pop pop pop pop
         0x00 0x00 0x01      // [1,0,0]
 
-    close:
-        
+    close:       
 }
 
 
 
-#define macro point_double() = takes(3) returns(3) {
+#define macro jacobian_double() = takes(3) returns(3) {
     // takes [z1,y1,x1]
     dup2 iszero
     break jumpi
 
-    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+    [P]
 
     dup1       //[P P z1 y1 x1]
     dup4 dup1    // [y1,y1,P,P,z1,y1,x1]
@@ -201,7 +212,7 @@
     swap5
     dup1
     mulmod // [z4 P P S P y_sq P z1 y1 x1]
-    0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc
+    [A]
     mulmod // [A*z4%P P S P y_sq P P z1 y1 x1]
     dup2 dup1
     dup11 dup1 // [x1 x1 P P A*z4%P P S P y_sq P z1 y1 x1]
@@ -246,4 +257,44 @@
     mulmod
     0x02
     mulmod // [z3,y3,z3]
+}
+
+#define macro jacobian_multiply() = takes(4) returns(3) {
+    // takes [n,z,y,x]
+    0x00 0x00 0x01      // [rz,ry,rx,z,y,x,n]
+    loop:
+        dup7 iszero
+        break jumpi
+
+        dup7 0x01
+        and
+        iszero
+        else_branch jumpi
+
+        dup6
+        dup6
+        dup6
+        jacobian_add()
+        
+    else_branch:
+        //
+        swap4
+        1 shr
+        swap4
+        
+        jacobian_double()
+        swap6 pop
+        swap6 pop
+        swap6 pop
+        loop jump
+
+    break:
+        // rz,ry,rx,cz,cy,cx,n
+        swap4 pop
+        // ry, rx, cz,rz,x,n
+        swap4 pop
+        // rx, cz, rz, ry, n
+        swap4
+        // n, cz, rz, ry, rx
+        pop pop  // rz, ry, rx
 }
